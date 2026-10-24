@@ -53,8 +53,8 @@ Measured on Windows 10 with a Ryzen 9 7950X3D and an RTX 4080, with 3 × SL Infi
 
 ### Languages
 - English (default) and Czech. Switch in Settings; the change applies immediately.
-- Translations live in `locales/<code>.yml` ([rust-i18n](https://github.com/longbridge/rust-i18n)) and are compiled into the exe.
-- **New language without rebuilding:** copy `en.yml` into a `locales\` folder next to `infinifan.exe` under a new code (e.g. `de.yml`), translate the values and restart the program. The language appears in the menu and missing texts fall back to English. A file in that folder also overrides the built-in English or Czech.
+- Translations are plain files in the `locales` folder next to `infinifan.exe` (`<code>.yml`, [rust-i18n](https://github.com/longbridge/rust-i18n)); the program loads them at startup. English and Czech are also built into the exe as a fallback.
+- **New language without rebuilding:** copy `locales\en.yml` to a new code (e.g. `de.yml`), translate the values and restart the program. The language appears in the menu and missing texts fall back to English. Existing texts can be fixed the same way by editing the file.
 - To add a language to the source, add a file to `locales/`. The `locales_have_same_keys` test makes sure no text is missing.
 
 ## Supported hardware
@@ -95,7 +95,7 @@ config\infinifan.json      settings (saved automatically)
 logs\infinifan.log         control log (infinifan.1.log = previous run)
 logs\infinifan-gui.log     window log
 drivers\PawnIO_setup.exe   optional installer of the CPU temperature driver
-locales\<code>.yml         optional extra or customized translations
+locales\<code>.yml         translations (loaded at startup, editable)
 ```
 
 ## Building from source

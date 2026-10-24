@@ -30,6 +30,8 @@ jobs:
           New-Item -ItemType Directory -Force "$dir/drivers" | Out-Null
           Copy-Item target/release/infinifan.exe $dir/
           Copy-Item README.md, LICENSE $dir/
+          # Translations next to the exe; the program loads them from there (the exe keeps a fallback copy).
+          Copy-Item locales $dir/locales -Recurse
           # Optional CPU temperature driver installer (GPL-2.0, unmodified official build).
           Copy-Item assets/pawnio/PawnIO_setup.exe $dir/drivers/
           Copy-Item assets/pawnio/PawnIO_setup-LICENSE.txt $dir/drivers/PawnIO-LICENSE.txt
