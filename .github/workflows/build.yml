@@ -1,0 +1,59 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dir = "InfiniFan"
+          New-Item -ItemType Directory -Force "$dir/drivers" | Out-Null
+          Copy-Item target/release/infinifan.exe $dir/
+          Copy-Item README.md, LICENSE $dir/
+          # Optional CPU temperature driver installer (GPL-2.0, unmodified official build).
+          Copy-Item assets/pawnio/PawnIO_setup.exe $dir/drivers/
+          Copy-Item assets/pawnio/PawnIO_setup-LICENSE.txt $dir/drivers/PawnIO-LICENSE.txt
+          $name = if ("${{ github.ref_type }}" -eq "tag") { "InfiniFan-${{ github.ref_name }}" } else { "InfiniFan-${{ github.sha }}".Substring(0, 17) }
+          Compress-Archive -Path $dir -DestinationPath "$name.zip"
+          "ZIP_NAME=$name.zip" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InfiniFan
+          path: ${{ env.ZIP_NAME }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: InfiniFan
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: InfiniFan-*.zip
+          generate_release_notes: true

@@ -1,5 +1,7 @@
 # InfiniFan
 
+[![Build](https://github.com/Krejza9/infinifan/actions/workflows/build.yml/badge.svg)](https://github.com/Krejza9/infinifan/actions/workflows/build.yml)
+
 A small, fast replacement for **Lian Li L-Connect 3** for the **SL Infinity** fan controller, written in Rust.
 It controls fan speed by CPU or GPU temperature, sets the lighting effects and can hand control over to the motherboard or another RGB program.
 Control runs as a single small background process. The window only opens for settings and exits completely when closed.
@@ -69,8 +71,8 @@ Other Lian Li controllers (SL V2, TL, UNI HUB AL…) are not supported yet.
 
 ## Installation and running
 
-1. Download `infinifan.exe` and put it in any folder. It's portable: no installation, everything it needs sits next to it.
-2. For the CPU temperature, put a `drivers\` folder with `PawnIO_setup.exe` next to the exe. Get it from [PawnIO.Setup releases](https://github.com/namazso/PawnIO.Setup/releases).
+1. Download the latest `InfiniFan-*.zip` from [Releases](https://github.com/Krejza9/infinifan/releases) and unpack it into any folder (it already contains `drivers\PawnIO_setup.exe`). It's portable: no installation, everything it needs sits next to it.
+2. A newer PawnIO installer can be dropped into `drivers\` from [PawnIO.Setup releases](https://github.com/namazso/PawnIO.Setup/releases); it is only needed for the CPU temperature.
 3. Run `infinifan.exe`. Background control starts and the window opens.
 
 If the program's folder isn't writable (for example under `C:\Program Files`), settings and logs go to `%APPDATA%\InfiniFan` instead.
@@ -104,7 +106,7 @@ You need [Rust](https://rustup.rs) (stable, edition 2024) and the MSVC Build Too
 cargo build --release
 ```
 
-The result is `target/release/infinifan.exe`. The icon is embedded at build time (`build.rs`).
+The result is `target/release/infinifan.exe`. GitHub Actions (`.github/workflows/build.yml`) runs the tests and builds on every push; pushing a `v*` tag publishes a release with the zip. The icon is embedded at build time (`build.rs`).
 
 Tests:
 
