@@ -1,0 +1,7 @@
+# Build output
+/target/
+
+# Local settings and logs when running from target/
+config/
+logs/
+*.log
