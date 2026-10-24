@@ -35,9 +35,26 @@ fn png(size: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The program reads its texts from `locales` next to the exe; mirror them into target\<profile>.
+fn copy_locales() {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    // OUT_DIR = target\<profile>\build\<crate>-<hash>\out
+    let Some(profile_dir) = out.ancestors().nth(3) else { return };
+    let dst = profile_dir.join("locales");
+    let _ = std::fs::create_dir_all(&dst);
+    for entry in std::fs::read_dir("locales").into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "yml") {
+            let _ = std::fs::copy(&path, dst.join(entry.file_name()));
+        }
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=src/icon.rs");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=locales");
+    copy_locales();
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let sizes = [16u32, 20, 24, 32, 40, 48, 64, 256];
     let images: Vec<Vec<u8>> = sizes.iter().map(|&s| png(s, &icon::icon_rgba(s))).collect();

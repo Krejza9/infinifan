@@ -1,32 +1,57 @@
-//! UI language: translations live in `locales/<code>.yml` (rust-i18n) and are compiled into the exe.
-//! Files in a `locales` folder next to the exe are loaded at startup and take precedence, so a
-//! language can be added or fixed without rebuilding; it shows up in the Settings switcher.
+//! UI language. Translations are plain files in the `locales` folder next to the exe
+//! (`<code>.yml`, flat `key: "text"` lines, `%{name}` placeholders); nothing is built into the exe.
+//! `en.yml` is the base language and must be present; other languages fall back to it key by key.
+//! Adding a language = adding a file; it shows up in the Settings switcher after a restart.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 
-/// Translations from `<exe dir>\locales\*.yml`, consulted before the embedded ones.
-pub struct FolderBackend {
-    langs: HashMap<String, HashMap<String, String>>,
+const BASE: &str = "en";
+
+static LANGS: OnceLock<HashMap<String, HashMap<String, String>>> = OnceLock::new();
+static CURRENT: RwLock<String> = RwLock::new(String::new());
+
+/// Translated text: `tr!("key")` or `tr!("key", name = value, …)` for `%{name}` placeholders.
+#[macro_export]
+macro_rules! tr {
+    ($key:expr) => {
+        $crate::lang::translate($key, &[])
+    };
+    ($key:expr, $($name:ident = $value:expr),+ $(,)?) => {
+        $crate::lang::translate($key, &[$((stringify!($name), $value.to_string())),+])
+    };
 }
 
-impl FolderBackend {
-    pub fn load() -> Self {
-        let dir = crate::paths::exe_dir().join("locales");
-        let mut langs = HashMap::new();
-        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "yml")
-                && let (Some(code), Ok(text)) = (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
-            {
-                langs.insert(code.to_string(), parse(&text));
-            }
+pub fn locales_dir() -> PathBuf {
+    crate::paths::exe_dir().join("locales")
+}
+
+/// Loads all `locales\*.yml`. Fails when the base language file is missing or empty.
+pub fn load() -> Result<(), String> {
+    let dir = locales_dir();
+    let mut langs = HashMap::new();
+    for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "yml")
+            && let (Some(code), Ok(text)) = (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
+        {
+            langs.insert(code.to_string(), parse(&text));
         }
-        FolderBackend { langs }
     }
+    if langs.get(BASE).is_none_or(|m| m.is_empty()) {
+        return Err(format!(
+            "The base language file is missing:\n{}\n\nInfiniFan cannot start without it. Download the release again \
+             or put en.yml back into the locales folder.",
+            dir.join(format!("{BASE}.yml")).display()
+        ));
+    }
+    let _ = LANGS.set(langs);
+    set(BASE);
+    Ok(())
 }
 
-/// Flat `key: value` lines as in `locales/*.yml`; values may be "quoted" (JSON escapes) or plain.
+/// Flat `key: value` lines; values may be "quoted" (JSON escapes) or plain.
 fn parse(text: &str) -> HashMap<String, String> {
     text.lines()
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -44,66 +69,78 @@ fn parse(text: &str) -> HashMap<String, String> {
         .collect()
 }
 
-impl rust_i18n::Backend for FolderBackend {
-    fn available_locales(&self) -> Vec<Cow<'_, str>> {
-        self.langs.keys().map(|k| Cow::from(k.as_str())).collect()
-    }
-
-    fn translate(&self, locale: &str, key: &str) -> Option<Cow<'_, str>> {
-        self.langs.get(locale)?.get(key).map(|v| Cow::from(v.as_str()))
-    }
-
-    fn messages_for_locale(&self, locale: &str) -> Option<Vec<(Cow<'_, str>, Cow<'_, str>)>> {
-        let m = self.langs.get(locale)?;
-        Some(m.iter().map(|(k, v)| (Cow::from(k.as_str()), Cow::from(v.as_str()))).collect())
-    }
+fn langs() -> &'static HashMap<String, HashMap<String, String>> {
+    static EMPTY: OnceLock<HashMap<String, HashMap<String, String>>> = OnceLock::new();
+    LANGS.get().unwrap_or_else(|| EMPTY.get_or_init(HashMap::new))
 }
 
-/// Translated text as `String` (all of `t!`'s forms: `tr!("key")`, `tr!("key", name = value)`).
-#[macro_export]
-macro_rules! tr {
-    ($($t:tt)*) => {
-        rust_i18n::t!($($t)*).into_owned()
-    };
+/// Text for `key` in the current language, then English, then the key itself.
+pub fn translate(key: &str, args: &[(&str, String)]) -> String {
+    let current = current();
+    let text = [current.as_str(), BASE]
+        .iter()
+        .find_map(|l| langs().get(*l).and_then(|m| m.get(key)))
+        .cloned()
+        .unwrap_or_else(|| key.to_string());
+    args.iter().fold(text, |t, (name, value)| t.replace(&format!("%{{{name}}}"), value))
 }
 
-/// Available languages (file names in `locales/`).
+/// Available languages (file names in `locales`), sorted.
 pub fn languages() -> Vec<String> {
-    let mut l: Vec<String> = rust_i18n::available_locales!().into_iter().map(|s| s.to_string()).collect();
+    let mut l: Vec<String> = langs().keys().cloned().collect();
     l.sort();
-    l.dedup();
     l
 }
 
+/// Name of a language written in that language (`lang.name` of its file).
+pub fn name_of(code: &str) -> String {
+    langs().get(code).and_then(|m| m.get("lang.name")).cloned().unwrap_or_else(|| code.to_string())
+}
+
 pub fn current() -> String {
-    rust_i18n::locale().to_string()
+    CURRENT.read().map(|c| c.clone()).unwrap_or_default()
 }
 
 pub fn set(code: &str) {
-    rust_i18n::set_locale(code);
+    if let Ok(mut c) = CURRENT.write() {
+        *c = code.to_string();
+    }
 }
 
 /// Language from the config, otherwise English.
 pub fn apply(configured: Option<&str>) {
-    let code = configured.filter(|c| languages().iter().any(|l| l == c)).unwrap_or("en");
+    let code = configured.filter(|c| langs().contains_key(*c)).unwrap_or(BASE);
     set(code);
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    fn keys(path: &Path) -> Vec<String> {
+        let mut k: Vec<String> = super::parse(&std::fs::read_to_string(path).unwrap()).into_keys().collect();
+        k.sort();
+        k
+    }
+
     /// Every language must have exactly the keys of English (no missing or stale texts).
     #[test]
     fn locales_have_same_keys() {
-        let keys = |code: &str| -> Vec<String> {
-            let path = format!("{}/locales/{code}.yml", env!("CARGO_MANIFEST_DIR"));
-            let mut k: Vec<String> =
-                std::fs::read_to_string(path).unwrap().lines().filter_map(|l| l.split_once(':').map(|(k, _)| k.trim().to_string())).collect();
-            k.sort();
-            k
-        };
-        let en = keys("en");
-        for code in super::languages() {
-            assert_eq!(keys(&code), en, "locales/{code}.yml differs from en.yml");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let en = keys(&dir.join("en.yml"));
+        assert!(!en.is_empty());
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "yml") {
+                assert_eq!(keys(&path), en, "{} differs from en.yml", path.display());
+            }
         }
+    }
+
+    #[test]
+    fn placeholders_are_filled() {
+        assert_eq!(super::translate("no.such.key", &[]), "no.such.key");
+        let t = "Group %{n}".to_string();
+        assert_eq!([("n", "2".to_string())].iter().fold(t, |t, (n, v)| t.replace(&format!("%{{{n}}}"), v)), "Group 2");
     }
 }

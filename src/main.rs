@@ -1,7 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-rust_i18n::i18n!("locales", fallback = "en", backend = lang::FolderBackend::load());
-
 #[macro_use]
 mod lang;
 mod app;
@@ -45,6 +43,12 @@ fn init_logging(name: &str) {
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let has = |a: &str| args.iter().any(|x| x == a);
+
+    // Texts come only from the locales folder; without the base language there is nothing to show.
+    if let Err(msg) = lang::load() {
+        system::error_box("InfiniFan", &msg);
+        return Ok(());
+    }
 
     if has("--background") || has("--minimized") {
         init_logging("infinifan");

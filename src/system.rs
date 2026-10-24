@@ -126,6 +126,14 @@ pub fn migrate_autostart() {
     }
 }
 
+/// Error dialog for problems that stop the program before any window exists.
+pub fn error_box(title: &str, text: &str) {
+    use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    unsafe {
+        MessageBoxW(None, &HSTRING::from(text), &HSTRING::from(title), MB_OK | MB_ICONERROR);
+    }
+}
+
 /// Restarts the program as administrator (UAC) with the given arguments. Returns true if the launch succeeded.
 pub fn relaunch_elevated(args: &str) -> bool {
     let Ok(exe) = std::env::current_exe() else { return false };

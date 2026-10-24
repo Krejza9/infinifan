@@ -575,7 +575,7 @@ impl App {
                 let names: Vec<(String, String)> = lang::languages()
                     .into_iter()
                     .map(|l| {
-                        let name = rust_i18n::t!("lang.name", locale = &l).into_owned();
+                        let name = lang::name_of(&l);
                         (l, name)
                     })
                     .collect();

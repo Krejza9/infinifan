@@ -53,7 +53,7 @@ Measured on Windows 10 with a Ryzen 9 7950X3D and an RTX 4080, with 3 × SL Infi
 
 ### Languages
 - English (default) and Czech. Switch in Settings; the change applies immediately.
-- Translations are plain files in the `locales` folder next to `infinifan.exe` (`<code>.yml`, [rust-i18n](https://github.com/longbridge/rust-i18n)); the program loads them at startup. English and Czech are also built into the exe as a fallback.
+- Translations are plain files in the `locales` folder next to `infinifan.exe` (`<code>.yml`, `key: "text"` lines); the program loads them at startup and nothing is built into the exe. `en.yml` is the base language: without it the program shows an error and doesn't start, and other languages fall back to it for missing texts.
 - **New language without rebuilding:** copy `locales\en.yml` to a new code (e.g. `de.yml`), translate the values and restart the program. The language appears in the menu and missing texts fall back to English. Existing texts can be fixed the same way by editing the file.
 - To add a language to the source, add a file to `locales/`. The `locales_have_same_keys` test makes sure no text is missing.
 
@@ -152,7 +152,7 @@ The pipes are accessible to local users only and reject remote connections.
 ## Credits and third-party licenses
 
 - [PawnIO](https://github.com/namazso/PawnIO) and [PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) by namazso. The `AMDFamily17.bin` module is embedded in the program; its license is in `assets/pawnio/COPYING`. The official `PawnIO_setup.exe` (used by the signature check test) is GPL-2.0, see `assets/pawnio/PawnIO_setup-LICENSE.txt`.
-- [egui / eframe](https://github.com/emilk/egui), [hidapi](https://github.com/ruabmbua/hidapi-rs), [tray-icon](https://github.com/tauri-apps/tray-icon), [windows-rs](https://github.com/microsoft/windows-rs), [rust-i18n](https://github.com/longbridge/rust-i18n).
+- [egui / eframe](https://github.com/emilk/egui), [hidapi](https://github.com/ruabmbua/hidapi-rs), [tray-icon](https://github.com/tauri-apps/tray-icon), [windows-rs](https://github.com/microsoft/windows-rs).
 - [Lucide](https://lucide.dev) icons (ISC license, see `assets/lucide/LICENSE`). The bundled font holds only the icons the program uses; `tools/lucide_subset.py` regenerates it and `src/icons.rs`.
 
 L-Connect, SL Infinity and Lian Li are trademarks of Lian Li Industrial Co., Ltd.
