@@ -44,7 +44,7 @@ Measured on Windows 10 with a Ryzen 9 7950X3D and an RTX 4080, with 3 × SL Infi
 - A switch that hands the lighting over to other programs such as **SignalRGB** or **OpenRGB**, like the original.
 
 ### System
-- **CPU temperature** through the [PawnIO](https://pawnio.eu) driver (AMD Family 17h and newer). The program offers to run the official signed installer and checks its signature first.
+- **CPU temperature** through the [PawnIO](https://pawnio.eu) driver, on AMD Ryzen (Zen, Family 17h and newer: Tctl) and Intel Core (package temperature = TjMax minus the thermal sensor's distance to it). The program offers to run the official signed installer and checks its signature first. Intel support is new and not yet tested on real Intel hardware.
 - **GPU temperature** from the Windows graphics kernel (D3DKMT), the same source Task Manager uses. No extra driver or library.
 - **Autostart** at sign-in through Task Scheduler (with administrator rights, needed for the CPU temperature).
 - Tray icon, single instance.
@@ -63,7 +63,7 @@ Measured on Windows 10 with a Ryzen 9 7950X3D and an RTX 4080, with 3 × SL Infi
 |---|---|
 | Controller | Lian Li **SL Infinity**, USB `0CF2:A102`, firmware 1.4 |
 | System | Windows 10 / 11, x64 |
-| CPU temperature | AMD Ryzen (Family 17h+) via PawnIO; without PawnIO the curve follows the GPU |
+| CPU temperature | AMD Ryzen (Family 17h+) or Intel Core via PawnIO; without it the curve follows the GPU |
 
 Other Lian Li controllers (SL V2, TL, UNI HUB AL…) are not supported yet.
 
@@ -151,7 +151,7 @@ The pipes are accessible to local users only and reject remote connections.
 
 ## Credits and third-party licenses
 
-- [PawnIO](https://github.com/namazso/PawnIO) and [PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) by namazso. The `AMDFamily17.bin` module is embedded in the program; its license is in `assets/pawnio/COPYING`. The official `PawnIO_setup.exe` (used by the signature check test) is GPL-2.0, see `assets/pawnio/PawnIO_setup-LICENSE.txt`.
+- [PawnIO](https://github.com/namazso/PawnIO) and [PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) by namazso. The `AMDFamily17.bin` and `IntelMSR.bin` modules are embedded in the program; their license is in `assets/pawnio/COPYING`. The official `PawnIO_setup.exe` (used by the signature check test) is GPL-2.0, see `assets/pawnio/PawnIO_setup-LICENSE.txt`.
 - [egui / eframe](https://github.com/emilk/egui), [hidapi](https://github.com/ruabmbua/hidapi-rs), [tray-icon](https://github.com/tauri-apps/tray-icon), [windows-rs](https://github.com/microsoft/windows-rs).
 - [Lucide](https://lucide.dev) icons (ISC license, see `assets/lucide/LICENSE`). The bundled font holds only the icons the program uses; `tools/lucide_subset.py` regenerates it and `src/icons.rs`.
 

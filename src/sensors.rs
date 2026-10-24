@@ -1,8 +1,11 @@
 //! CPU and GPU temperatures.
 //!
-//! * CPU (AMD Zen): Tctl from SMN register 0x00059800 via the PawnIO driver, if it is installed
-//!   (PawnIO 2.x is a Plug-and-Play driver – without an INF install it creates no device,
-//!   so it can't just be loaded temporarily as a service). The `AMDFamily17.bin` module comes from PawnIO.Modules (LGPL-2.1).
+//! * CPU, via the PawnIO driver if it is installed (PawnIO 2.x is a Plug-and-Play driver – without an
+//!   INF install it creates no device, so it can't just be loaded temporarily as a service):
+//!   - AMD Zen: Tctl from SMN register 0x00059800 (`AMDFamily17.bin` module);
+//!   - Intel: package temperature = TjMax − the distance reported in IA32_PACKAGE_THERM_STATUS
+//!     (`IntelMSR.bin` module).
+//!   Both modules come from PawnIO.Modules (LGPL-2.1).
 //! * GPU: temperature from the Windows graphics kernel (D3DKMT, same as Task Manager) – no extra
 //!   library (the earlier NVML approach used ~20 MB of memory).
 
@@ -15,7 +18,67 @@ use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingl
 use windows::core::w;
 
 const AMD_FAMILY17_MODULE: &[u8] = include_bytes!("../assets/pawnio/AMDFamily17.bin");
+const INTEL_MSR_MODULE: &[u8] = include_bytes!("../assets/pawnio/IntelMSR.bin");
 const SMN_THM_TCON_CUR_TMP: u64 = 0x0005_9800;
+/// Intel SDM vol. 4: TjMax in bits 23:16.
+const MSR_TEMPERATURE_TARGET: u64 = 0x1A2;
+/// Intel SDM vol. 4: per-core thermal status; digital readout (°C below TjMax) in bits 22:16, valid bit 31.
+const IA32_THERM_STATUS: u64 = 0x19C;
+/// Intel SDM vol. 4: package thermal status, readout in bits 22:16.
+const IA32_PACKAGE_THERM_STATUS: u64 = 0x1B1;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Vendor {
+    Amd,
+    Intel,
+}
+
+impl Vendor {
+    /// CPU vendor from CPUID leaf 0; `None` for other vendors.
+    fn detect() -> Option<Vendor> {
+        #[cfg(target_arch = "x86_64")]
+        {
+            let r = std::arch::x86_64::__cpuid(0);
+            let mut id = [0u8; 12];
+            id[..4].copy_from_slice(&r.ebx.to_le_bytes());
+            id[4..8].copy_from_slice(&r.edx.to_le_bytes());
+            id[8..].copy_from_slice(&r.ecx.to_le_bytes());
+            match &id {
+                b"AuthenticAMD" => Some(Vendor::Amd),
+                b"GenuineIntel" => Some(Vendor::Intel),
+                _ => None,
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        None
+    }
+
+    fn module(self) -> &'static [u8] {
+        match self {
+            Vendor::Amd => AMD_FAMILY17_MODULE,
+            Vendor::Intel => INTEL_MSR_MODULE,
+        }
+    }
+}
+
+#[cfg(test)]
+mod vendor_tests {
+    /// Every x86-64 PC this program targets is AMD or Intel.
+    #[test]
+    fn vendor_detected() {
+        assert!(super::Vendor::detect().is_some());
+    }
+}
+
+/// Package thermal sensor present (CPUID.06H:EAX bit 6).
+fn intel_has_package_sensor() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::x86_64::__cpuid(6).eax & (1 << 6) != 0
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    false
+}
 
 // pawnio_um.h: CTL_CODE(41394, fn, METHOD_BUFFERED, FILE_ANY_ACCESS)
 const fn ctl_code(function: u32) -> u32 {
@@ -37,6 +100,9 @@ pub enum CpuSensorStatus {
 struct PawnIo {
     device: HANDLE,
     pci_mutex: HANDLE,
+    vendor: Vendor,
+    /// Intel: TjMax in °C, read once.
+    tj_max: f32,
 }
 
 // The handles are kernel objects, used only from the control thread.
@@ -44,6 +110,9 @@ unsafe impl Send for PawnIo {}
 
 impl PawnIo {
     fn open() -> Result<Self, CpuSensorStatus> {
+        let Some(vendor) = Vendor::detect() else {
+            return Err(CpuSensorStatus::Unsupported(crate::tr!("sensor.unsupported", e = "vendor")));
+        };
         unsafe {
             let device = CreateFileW(
                 w!("\\\\?\\GLOBALROOT\\Device\\PawnIO"),
@@ -64,19 +133,26 @@ impl PawnIo {
             if let Err(e) = DeviceIoControl(
                 device,
                 IOCTL_PIO_LOAD_BINARY,
-                Some(AMD_FAMILY17_MODULE.as_ptr().cast()),
-                AMD_FAMILY17_MODULE.len() as u32,
+                Some(vendor.module().as_ptr().cast()),
+                vendor.module().len() as u32,
                 None,
                 0,
                 None,
                 None,
             ) {
                 let _ = CloseHandle(device);
-                return Err(CpuSensorStatus::Unsupported(crate::tr!("sensor.not_zen", e = e)));
+                return Err(CpuSensorStatus::Unsupported(crate::tr!("sensor.unsupported", e = e)));
             }
             // The same mutex is used by other tools (LHM, HWiNFO…) to access PCI configuration space.
             let pci_mutex = CreateMutexW(None, false, w!("Global\\Access_PCI")).unwrap_or_default();
-            Ok(Self { device, pci_mutex })
+            let mut io = Self { device, pci_mutex, vendor, tj_max: 100.0 };
+            if vendor == Vendor::Intel {
+                // Older CPUs may leave the field at 0; 100 °C is the usual value then.
+                let target = io.read_msr(MSR_TEMPERATURE_TARGET).map(|v| ((v >> 16) & 0xFF) as f32);
+                io.tj_max = target.filter(|t| *t >= 50.0).unwrap_or(100.0);
+                log::info!("Intel CPU, TjMax {} °C", io.tj_max);
+            }
+            Ok(io)
         }
     }
 
@@ -116,6 +192,34 @@ impl PawnIo {
                 let _ = ReleaseMutex(self.pci_mutex);
             }
             (n? >= 1).then_some(out[0] as u32)
+        }
+    }
+
+    fn read_msr(&self, msr: u64) -> Option<u64> {
+        let mut out = [0u64; 1];
+        let n = self.execute("ioctl_read_msr", &[msr], &mut out)?;
+        (n >= 1).then_some(out[0])
+    }
+
+    /// Intel package temperature in °C (falls back to the core the thread runs on without a package sensor).
+    fn read_intel(&self) -> Option<f32> {
+        let below = if intel_has_package_sensor() {
+            (self.read_msr(IA32_PACKAGE_THERM_STATUS)? >> 16) & 0x7F
+        } else {
+            let v = self.read_msr(IA32_THERM_STATUS)?;
+            if v & (1 << 31) == 0 {
+                return None;
+            }
+            (v >> 16) & 0x7F
+        };
+        let t = self.tj_max - below as f32;
+        (-20.0..=130.0).contains(&t).then_some(t)
+    }
+
+    fn read(&self) -> Option<f32> {
+        match self.vendor {
+            Vendor::Amd => self.read_tctl(),
+            Vendor::Intel => self.read_intel(),
         }
     }
 
@@ -186,7 +290,7 @@ impl Sensors {
     }
 
     pub fn read(&self) -> Temperatures {
-        let cpu = self.pawnio.as_ref().and_then(PawnIo::read_tctl);
+        let cpu = self.pawnio.as_ref().and_then(PawnIo::read);
         let gpu = self.gpu.as_ref().and_then(GpuSensor::temperature);
         Temperatures { cpu, gpu }
     }
